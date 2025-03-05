@@ -3,14 +3,32 @@ from .models import PasswordEntry
 from cryptography.fernet import Fernet
 from django.conf import settings
 import hashlib
+from django.contrib.auth.models import User
+
+
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=6)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'password']
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data.get('email', ''),
+            password=validated_data['password']
+        )
+        return user
 
 class PasswordEntrySerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)  # Make user read-only
 
     class Meta:
         model = PasswordEntry
         fields = ['id', 'user', 'url', 'username', 'password', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']  # Ensure 'user' is read-only
 
     def create(self, validated_data):
         user = self.context['request'].user  # Get the user from the request context
@@ -32,9 +50,9 @@ class PasswordEntrySerializer(serializers.ModelSerializer):
         cipher_suite = Fernet(settings.FERNET_KEY)
         encrypted_password = cipher_suite.encrypt(plaintext_password.encode())
 
-        # Create the PasswordEntry
+        # Create the PasswordEntry with the authenticated user
         return PasswordEntry.objects.create(
-            user=user,
+            user=user,  # Assign the user
             encrypted_password=encrypted_password,  # BinaryField stores bytes
             password_hash=password_hash,
             **validated_data
